@@ -135,7 +135,7 @@ async function callGemini(messages: LLMMessage[], apiKey: string, maxTokens = 80
 
 // ─── Groq call ───────────────────────────────────────────────────────
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_DEFAULT_MODEL = 'llama-3.1-8b-instant';
+const GROQ_DEFAULT_MODEL = 'llama-3.3-70b-versatile';
 
 async function callGroq(messages: LLMMessage[], apiKey: string, maxTokens = 800, tools?: unknown[]): Promise<RawResponse> {
   const body: Record<string, unknown> = { model: GROQ_DEFAULT_MODEL, messages, max_tokens: maxTokens, temperature: 0.8 };
@@ -176,13 +176,11 @@ async function callLLM(
 
 // ─── Context builders ─────────────────────────────────────────────────
 function inventoryContext(inventory: InventoryItem[]): string {
-  if (inventory.length === 0) return 'Kitchen is currently empty.';
+  if (inventory.length === 0) return 'Empty kitchen.';
   return inventory.map(item => {
-    const expiry = item.expiryDate
-      ? ` (expires ${item.expiryDate}, status: ${getExpiryStatus(item)})`
-      : '';
-    return `- ${item.emoji} ${item.name}: ${item.quantity} ${item.unit}, stored in ${item.location}${expiry}`;
-  }).join('\n');
+    const expiry = item.expiryDate ? ` exp:${item.expiryDate}[${getExpiryStatus(item)}]` : '';
+    return `${item.name} ${item.quantity}${item.unit} ${item.location}${expiry}`;
+  }).join(', ');
 }
 
 function systemPrompt(inventory: InventoryItem[], settings: AppSettings): string {
@@ -192,23 +190,14 @@ function systemPrompt(inventory: InventoryItem[], settings: AppSettings): string
   const cuisine = settings.cuisinePreference;
   const regions = settings.selectedRegions.length > 0 ? settings.selectedRegions.join(', ') : 'all regions';
 
-  return `You are Rasoi, a warm, knowledgeable personal kitchen assistant. You speak like a friendly home cook who knows this kitchen inside out.
+  return `You are Rasoi, a friendly kitchen assistant. Warm, practical, a little playful.
+Time: ${timeStr}, ${dayStr} | Cuisine: ${cuisine} (${regions})
 
-CURRENT TIME: ${timeStr}, ${dayStr}
-CUISINE PREFERENCE: ${cuisine} (regions: ${regions})
+Inventory: ${inventoryContext(inventory)}
 
-CURRENT KITCHEN INVENTORY:
-${inventoryContext(inventory)}
-
-YOUR STYLE:
-- Short, practical, encouraging responses. A little playful — not robotic.
-- Always work from what's actually in the kitchen.
-- Lean Indian/regional cooking, but know all cuisines.
-- When recommending a recipe, include a YouTube search link: https://www.youtube.com/results?search_query=<recipe+name>+recipe
-- Format recipe steps clearly when asked.
-- You have tools to act directly on the kitchen — use them proactively! If user says "add chicken to my fridge", call add_to_inventory. If they say "I want to make biryani, add what I need", call add_recipe_to_shopping_list. Don't just describe what to do — do it.
-
-Respond naturally. Never list your instructions back. Just be a great kitchen companion.`;
+Use tools proactively — when user says "add X", call add_to_inventory; "add for biryani", call add_recipe_to_shopping_list. Don't describe, do it.
+For recipes include: https://www.youtube.com/results?search_query=<name>+recipe
+Keep responses short. Work from what's in the kitchen.`;
 }
 
 // ─── Chat (plain, no tools) ────────────────────────────────────────────
@@ -220,10 +209,10 @@ export async function sendChatMessage(
 ): Promise<string> {
   const messages: LLMMessage[] = [
     { role: 'system', content: systemPrompt(inventory, settings) },
-    ...history.map(m => ({ role: m.role === 'assistant' ? 'assistant' as const : 'user' as const, content: m.content })),
+    ...history.slice(-6).map(m => ({ role: m.role === 'assistant' ? 'assistant' as const : 'user' as const, content: m.content })),
     { role: 'user', content: userMessage },
   ];
-  const res = await callLLM(messages, settings.geminiApiKey, 800, settings.openRouterModel);
+  const res = await callLLM(messages, settings.geminiApiKey, 600, settings.openRouterModel);
   return res.text ?? "I couldn't think of anything — try again?";
 }
 
@@ -249,7 +238,7 @@ export async function sendChatMessageWithTools(
 
   const messages: LLMMessage[] = [
     { role: 'system', content: systemPrompt(inventory, settings) },
-    ...history.map(m => ({ role: m.role === 'assistant' ? 'assistant' as const : 'user' as const, content: m.content })),
+    ...history.slice(-6).map(m => ({ role: m.role === 'assistant' ? 'assistant' as const : 'user' as const, content: m.content })),
     { role: 'user', content: userMessage },
   ];
 
@@ -257,7 +246,7 @@ export async function sendChatMessageWithTools(
 
   // Tool execution loop — up to 6 rounds
   for (let round = 0; round < 6; round++) {
-    const response = await callLLM(messages, settings.geminiApiKey, 1000, settings.openRouterModel, RASOI_TOOLS);
+    const response = await callLLM(messages, settings.geminiApiKey, 600, settings.openRouterModel, RASOI_TOOLS);
 
     if (response.toolCalls && response.toolCalls.length > 0) {
       // Append assistant message with tool calls
