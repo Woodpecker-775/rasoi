@@ -80,7 +80,12 @@ export default function AssistantPage() {
       setDisplayMessages(prev => [...prev, assistantMsg]);
       addChatMessage({ role: 'assistant', content: result.text });
     } catch (e: unknown) {
-      setError(`Oops — ${e instanceof Error ? e.message : 'something went wrong'}. Try again?`);
+      const msg = e instanceof Error ? e.message : 'something went wrong';
+      const isQuota = msg.toLowerCase().includes('quota') || msg.toLowerCase().includes('rate limit') || msg.toLowerCase().includes('exceeded');
+      setError(isQuota
+        ? 'Gemini free quota exceeded. Switch to OpenRouter (sk-or-…) or Groq (gsk_…) in ⚙️ Settings — both have better free limits.'
+        : `Oops — ${msg}. Try again?`
+      );
     } finally {
       setLoading(false);
     }

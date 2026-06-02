@@ -105,7 +105,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   });
 
   const lowItems = inventory.filter(isLowStock);
-  const hasApiKey = !!settings.geminiApiKey.trim();
+  // In production the built-in AI (Vercel → Groq) is always available; only gate in local dev
+  const hasApiKey = !!settings.geminiApiKey.trim() || !import.meta.env.DEV;
 
   return (
     <AppContext.Provider value={{

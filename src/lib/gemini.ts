@@ -3,9 +3,10 @@ import { getExpiryStatus } from './matching';
 import { RASOI_TOOLS, ToolExecutor, ToolResult, executeTool } from './tools';
 
 // ─── Provider detection ───────────────────────────────────────────────
-type Provider = 'gemini' | 'openrouter' | 'groq';
+type Provider = 'builtin' | 'gemini' | 'openrouter' | 'groq';
 
 function detectProvider(key: string): Provider {
+  if (!key) return 'builtin';
   if (key.startsWith('gsk_')) return 'groq';
   if (key.startsWith('sk-or-') || key.startsWith('sk-')) return 'openrouter';
   return 'gemini';
@@ -27,6 +28,28 @@ type LLMMessage =
 interface RawResponse {
   text: string | null;
   toolCalls: ToolCall[];
+}
+
+// ─── Built-in call (Vercel Edge → Groq, key stored server-side) ──────
+async function callBuiltIn(messages: LLMMessage[], maxTokens = 800, tools?: unknown[]): Promise<RawResponse> {
+  if (import.meta.env.DEV) {
+    throw new Error('Built-in AI only works when deployed. Add your own API key in Settings for local dev.');
+  }
+  const body: Record<string, unknown> = { messages, max_tokens: maxTokens };
+  if (tools?.length) body.tools = tools;
+
+  const res = await fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  const data = await res.json() as { error?: string; choices?: { message?: { content?: string | null; tool_calls?: ToolCall[] } }[] };
+
+  if (!res.ok) throw new Error(data.error ?? `AI error (${res.status})`);
+
+  const msg = data.choices?.[0]?.message;
+  return { text: msg?.content ?? null, toolCalls: msg?.tool_calls ?? [] };
 }
 
 // ─── OpenRouter call ──────────────────────────────────────────────────
@@ -145,6 +168,7 @@ async function callLLM(
   tools?: unknown[]
 ): Promise<RawResponse> {
   const provider = detectProvider(apiKey);
+  if (provider === 'builtin') return callBuiltIn(messages, maxTokens, tools);
   if (provider === 'groq') return callGroq(messages, apiKey, maxTokens, tools);
   if (provider === 'openrouter') return callOpenRouter(messages, apiKey, maxTokens, orModel, tools);
   return callGemini(messages, apiKey, maxTokens); // Gemini: no tool calling for now
@@ -194,7 +218,6 @@ export async function sendChatMessage(
   inventory: InventoryItem[],
   settings: AppSettings
 ): Promise<string> {
-  if (!settings.geminiApiKey) throw new Error('No API key set');
   const messages: LLMMessage[] = [
     { role: 'system', content: systemPrompt(inventory, settings) },
     ...history.map(m => ({ role: m.role === 'assistant' ? 'assistant' as const : 'user' as const, content: m.content })),
@@ -217,8 +240,6 @@ export async function sendChatMessageWithTools(
   settings: AppSettings,
   executor: ToolExecutor
 ): Promise<ToolChatResult> {
-  if (!settings.geminiApiKey) throw new Error('No API key set');
-
   const provider = detectProvider(settings.geminiApiKey);
   // Gemini direct doesn't support function calling in this format — fall back to plain chat
   if (provider === 'gemini') {
@@ -265,8 +286,6 @@ export async function generateCreativeRecipes(
   settings: AppSettings,
   mealTime: string
 ): Promise<Recipe[]> {
-  if (!settings.geminiApiKey) return [];
-
   const prompt = `Given this kitchen inventory:
 ${inventoryContext(inventory)}
 
@@ -308,7 +327,7 @@ export async function generateSmartAlert(
   lowItems: InventoryItem[],
   apiKey: string
 ): Promise<string> {
-  if (!apiKey || (expiringItems.length === 0 && lowItems.length === 0)) return '';
+  if (expiringItems.length === 0 && lowItems.length === 0) return '';
 
   const expiring = expiringItems.map(i => `${i.name} (${i.expiryDate})`).join(', ');
   const low = lowItems.map(i => i.name).join(', ');
