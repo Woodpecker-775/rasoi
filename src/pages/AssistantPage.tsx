@@ -50,6 +50,17 @@ export default function AssistantPage() {
 
   function genId() { return `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`; }
 
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/#{1,6}\s+/g, '')       // headings
+    .replace(/\*\*(.+?)\*\*/g, '$1') // bold
+    .replace(/\*(.+?)\*/g, '$1')     // italic
+    .replace(/`{1,3}([^`]*)`{1,3}/g, '$1') // code
+    .replace(/^\s*[-*]\s+/gm, '')    // bullet dashes
+    .replace(/\n{3,}/g, '\n\n')      // extra blank lines
+    .trim();
+}
+
   async function send(message?: string) {
     const text = (message ?? input).trim();
     if (!text || !hasApiKey) return;
@@ -176,7 +187,7 @@ export default function AssistantPage() {
                     : 'bg-white border border-amber-100 text-stone-700 rounded-tl-sm'
                 }`}
               >
-                {msg.content.split('\n').map((line, i, arr) => (
+                {(msg.role === 'assistant' ? stripMarkdown(msg.content) : msg.content).split('\n').map((line, i, arr) => (
                   <span key={i}>{line}{i < arr.length - 1 && <br />}</span>
                 ))}
               </div>

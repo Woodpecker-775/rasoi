@@ -195,9 +195,13 @@ Time: ${timeStr}, ${dayStr} | Cuisine: ${cuisine} (${regions})
 
 Inventory: ${inventoryContext(inventory)}
 
-Use tools proactively — when user says "add X", call add_to_inventory; "add for biryani", call add_recipe_to_shopping_list. Don't describe, do it.
-For recipes include: https://www.youtube.com/results?search_query=<name>+recipe
-Keep responses short. Work from what's in the kitchen.`;
+Rules:
+- NEVER use markdown. No #, no **, no *, no bullet dashes. Plain text only.
+- Keep responses SHORT. 2-4 sentences max unless asked for steps.
+- If asked what to do with an ingredient, give ONE quick idea — not a full recipe.
+- If asked for recipe steps, number them plainly: "1. Do this. 2. Do that."
+- Use tools proactively: "add chicken" → call add_to_inventory. Don't describe, do it.
+- For recipes, add: youtube.com/results?search_query=<name>+recipe`;
 }
 
 // ─── Chat (plain, no tools) ────────────────────────────────────────────
